@@ -1,6 +1,5 @@
 #pragma once
 
-
 namespace lf{
     struct Vec2d{
         double x = 0.0;

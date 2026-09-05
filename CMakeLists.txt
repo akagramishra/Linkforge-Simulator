@@ -15,5 +15,5 @@ FetchContent_MakeAvailable(raylib)
 add_library(lf_core src/solver.cpp)
 target_include_directories(lf_core PUBLIC include)
 
-add_executable(linkforge src/main.cpp src/render.cpp)
+add_executable(linkforge src/main.cpp src/render.cpp src/ioui.cpp src/theme.cpp src/raygui_impl.cpp)
 target_link_libraries(linkforge PRIVATE lf_core raylib)

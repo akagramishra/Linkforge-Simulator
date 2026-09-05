@@ -6,12 +6,12 @@
 namespace lf {
 
 struct View {
-    Vector2 origin = { 250.0f, 420.0f };  // where world (0,0) sits on screen
-    float scale = 1.6f;                   // pixels per mm
+    Vector2 origin = { 250.0f, 420.0f }; // where world (0,0) sits on screen, in pixels
+    float scale = 1.6f;                  // pixels per world unit
 };
 
-Vector2 ToScreen(Vec2d p, const View& v);
-void DrawMechanism(const Pose& p, const View& v);
+Vector2 ToScreen(Vec2d worldPoint, const View& view);
+void DrawMechanism(const Pose& pose, const View& view);
 
-void DrawCouplerCurve(const std::vector<lf::Vec2d>& couplerpoints, const View& v);
+void DrawCouplerCurve(const std::vector<lf::Vec2d>& couplerPoints, const View& view);
 }

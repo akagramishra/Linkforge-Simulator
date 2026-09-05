@@ -1,60 +1,73 @@
-# Linkforge
+# Linkforge Simulator
 
-A four-bar linkage simulator I wrote in C++ with raylib.
+A four-bar linkage simulator: type in four link lengths, watch the mechanism
+move, and see whether it's a crank-rocker, double-crank, double-rocker,
+triple-rocker, or change-point mechanism per Grashof's law.
 
-You give it the link lengths, and it works out where every joint sits as the crank turns, animates the whole thing, and draws the path traced by a point on the coupler link. It also checks the Grashof condition so you can tell straight away whether the crank is actually able to go all the way round.
+## How data flows
 
-![Linkforge Simulator](docs/image.png)
-
-## What it does
-
-- Works out the linkage position in real time as the crank rotates
-- Draws the coupler curve while the mechanism runs
-- Tells you the Grashof classification for whatever link lengths you have given it
-- Lets you switch between the open and crossed assembly at runtime
-- Pauses so you can stop and look at a particular position
-
-## Controls
-
-| Key | What it does |
-|-----|--------------|
-| `SPACE` | Flip between the open and crossed circuit |
-| `P` | Pause and resume |
-
-## Why I built it
-
-Most linkage tools either hide the maths behind a nice interface or sit inside a full CAD package. I wanted to write the kinematics myself, starting from the loop closure equations, and watch the coupler curve come out of my own solver instead of someone else's.
-
-It is also the first piece of something bigger I am working towards, which is taking geometry I have designed in CAD, pulling it into a simulator I have written, and running actual physics on it.
-
-## Building
-
-You will need a C++17 compiler, CMake 3.15 or newer, and raylib.
-
-```bash
-git clone https://github.com/akagramishra/Linkforge-Simulator.git
-cd Linkforge-Simulator
-cmake -B build
-cmake --build build
-./build/linkforge
+```
+UserInput (ioui)         IOUI (ioui)
+   |  writes lengths        |  reads lengths
+   v                        v
+        lf::FourBar  (mechanism.hpp)
+                |
+                |  lf::Solve() / lf::TraceCouplerCurve()   (solver.cpp)
+                v
+        lf::Pose  (mechanism.hpp)
+                |
+                |  lf::DrawMechanism() / lf::DrawCouplerCurve()   (render.cpp)
+                v
+             screen
 ```
 
-## How it works
+`main.cpp` owns the loop: each frame it reads input, lets `UserInput` update
+the `FourBar`, solves it, fits the view to whatever the window size is, draws
+it, then hands the same `FourBar` to `IOUI` to classify and report.
 
-A four-bar linkage only has one degree of freedom, so once you fix the crank angle everything else is determined. Linkforge walks the vector loop around the mechanism and solves for the two unknown link angles on every frame.
+## Files
 
-That system has two valid answers, which correspond to the two different ways the same linkage can be put together. That is what the circuit toggle is switching between, and it is why the shape can suddenly look inverted when you press space.
+| File | What's in it | Depends on |
+|---|---|---|
+| [vec2.hpp](include/vec2.hpp) | `Vec2d` -- a plain 2D point | nothing |
+| [mechanism.hpp](include/mechanism.hpp) | `FourBar` (the four lengths + current angle) and `Pose` (the solved joint positions). Pure data, no behaviour. | vec2.hpp |
+| [solver.hpp](include/solver.hpp) / [solver.cpp](src/solver.cpp) | The kinematics: `Solve()` turns a `FourBar` into a `Pose`; `IsGrashof()` checks Grashof's law; `TraceCouplerCurve()` sweeps a full rotation to trace the coupler curve | mechanism.hpp |
+| [render.hpp](include/render.hpp) / [render.cpp](src/render.cpp) | Turns a `Pose` into on-screen lines/circles (`DrawMechanism`) and draws the traced curve (`DrawCouplerCurve`). Knows nothing about the sidebar. | mechanism.hpp, theme.hpp, raylib |
+| [ioui.hpp](include/ioui.hpp) / [ioui.cpp](src/ioui.cpp) | The left-hand sidebar: `UserInput` draws the four length boxes and writes them into a `FourBar`; `IOUI` classifies a `FourBar` and draws the Grashof readout + mechanism type | solver.hpp, theme.hpp, raygui.hpp |
+| [theme.hpp](include/theme.hpp) / [theme.cpp](src/theme.cpp) | Loads two fonts baked at the exact sizes the app draws (`kBodySize`/`kHeadingSize`), so text is crisp instead of a stretched bitmap font; `theme::Text()` is what every on-screen label goes through | raylib |
+| [main.cpp](src/main.cpp) | The window and the per-frame loop that wires everything above together, plus fitting the view to the window as it's resized | all of the above |
+| [raygui.hpp](include/raygui.hpp) / [raygui_impl.cpp](src/raygui_impl.cpp) | Third-party immediate-mode GUI library (unmodified) -- gives us `GuiValueBox`, `GuiPanel`, etc. `raygui_impl.cpp` is the one file that defines `RAYGUI_IMPLEMENTATION`. | raylib |
 
-The Grashof check is simpler. It compares the shortest and longest links against the other two. If the shortest plus the longest is less than or equal to the sum of the remaining pair, then at least one link can make a full rotation. Linkforge runs that check on the current link set and prints the result in the corner.
+## Namespaces
 
-## What is next
+- `lf` -- the linkage itself: data (`mechanism.hpp`), math (`solver.hpp`), drawing (`render.hpp`). Nothing in here knows a GUI exists.
+- `ioui` -- the input/output panel that sits on top: reading numbers in, reporting the classification out.
+- `theme` -- shared text styling, used by both of the above.
 
-- Editing link lengths from inside the application instead of in code
-- Picking any point on the coupler to trace, not just a fixed one
-- Velocity and acceleration analysis
-- Bringing in part geometry from CAD
-- Heat conduction and flow simulation over that geometry
+## Naming conventions
 
-## License
+Every `FourBar` field is named after its kinematic role, not a generic
+`r1`/`r2`/`r3`/`r4`: `groundLength`, `crankLength`, `couplerLength`,
+`rockerLength`. The letters `s`, `l`, `p`, `q` are reserved for Grashof's
+law itself (shortest, longest, and the other two lengths, in `ioui.hpp`) --
+they're computed by sorting the four lengths, not tied to any one link, so
+they're kept separate from the role names to avoid implying a link is
+shortest just because of which box it was typed into.
 
-MIT
+## Input safety
+
+Link lengths are clamped to `[kMinLinkLength, kMaxLinkLength]` (10 to 1000,
+`include/ioui.hpp`) before they ever reach the solver, so a stray minus
+sign or an oversized number typed mid-edit can't produce a broken pose.
+`Solve()` (`src/solver.cpp`) additionally checks for degenerate geometry
+(coincident pivots, a triangle that doesn't close) and reports `Pose::valid
+= false` instead of silently producing `NaN` joint positions.
+
+## Window and view
+
+The window is resizable (`FLAG_WINDOW_RESIZABLE`, with a minimum size set
+so the sidebar always fits). Each frame, `main.cpp` computes a `WorldBounds`
+covering everywhere the mechanism can reach over a full rotation -- both
+pivot circles plus the traced coupler curve -- and centers the view on
+that, scaled to fit the current window. That's what keeps the simulation
+centered and correctly sized no matter the window size or the lengths typed in.
